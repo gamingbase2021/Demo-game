@@ -1,156 +1,351 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<style>
-canvas {
-    border:1px solid #d3d3d3;
-    background-color: #f1f1f1;
+	<title>HTML5 Game</title>
+	<style>
+        html, body{
+	width:100%;
+	height:100%;
 }
-</style>
+
+body{
+	margin:0px;
+	padding:0px;
+	background:#222222;
+	background-image:url('bg.png');
+	background-size:cover;
+	background-position: center center;
+	background-repeat: no-repeat;
+}
+
+#background{
+	width:800px;
+	height:600px;
+	position:absolute;
+	top:50%;
+	left:50%;
+	margin-left:-400px;
+	margin-top:-300px;
+	background:url('background.png');
+	background-repeat: no-repeat;
+	z-index:9;
+}
+
+#game{
+	background:url('gamebg.jpg');
+	position:absolute;
+	top:50%;
+	left:50%;
+	margin-left:-320px;
+	margin-top:-180px;
+}
+    </style>
 </head>
-<body onload="startGame()">
-<script>
+<body>
 
-var myGamePiece;
-var myObstacles = [];
-var mySound;
+	<div id="background"></div>
+	<canvas id="game" width="640" height="360"></canvas>
+	<script>
+    var canvas = document.getElementById('game');
+var context = canvas.getContext('2d');
+var gameStarted = false;
+var keys = [];
+var friction = 0.8;
+var gravity = 0.98;
+var completed = false;
 
-function startGame() {
-    myGamePiece = new component(30, 30, "red", 10, 120);
-    mySound = new sound("bounce.mp3");
-    myGameArea.start();
+var door_image = new Image();
+door_image.src = "door.png";
+
+var image = new Image();
+image.src = "character.png";
+
+var player = {
+	x: 5,
+	y: canvas.height - 45,
+	width: 40,
+	height: 40,
+	speed: 5,
+	velX: 0,
+	velY: 0,
+	color: "#ff0000",
+	jumping: false,
+	grounded: false,
+	jumpStrength: 7,
+	position: "idle",
+	draw: function(){	
+		startX = 40;
+		if(this.position == "left"){
+			startX = 0;
+		} else if(this.position == "right"){
+			startX = 80;
+		}
+		context.drawImage(image, startX, 0, 40, 40, this.x, this.y, 40, 40);
+	}
 }
 
-var myGameArea = {
-    canvas : document.createElement("canvas"),
-    start : function() {
-        this.canvas.width = 480;
-        this.canvas.height = 270;
-        this.context = this.canvas.getContext("2d");
-        document.body.insertBefore(this.canvas, document.body.childNodes[0]);
-        this.frameNo = 0;
-        this.interval = setInterval(updateGameArea, 20);
-    },
-    stop : function() {
-        clearInterval(this.interval);
-    },    
-    clear : function() {
-        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    }
+var goal = {
+	x: canvas.width-90,
+	y: 0,
+	width:40,
+	height:45,
+	color: "#0098cb",
+	draw: function(){
+		context.drawImage(door_image, this.x, this.y);
+	}
 }
 
-function component(width, height, color, x, y) {
-    this.width = width;
-    this.height = height;
-    this.speedX = 0;
-    this.speedY = 0;    
-    this.x = x;
-    this.y = y;    
-    this.update = function() {
-        ctx = myGameArea.context;
-        ctx.fillStyle = color;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
-    }
-    this.newPos = function() {
-        this.x += this.speedX;
-        this.y += this.speedY;        
-    }    
-    this.crashWith = function(otherobj) {
-        var myleft = this.x;
-        var myright = this.x + (this.width);
-        var mytop = this.y;
-        var mybottom = this.y + (this.height);
-        var otherleft = otherobj.x;
-        var otherright = otherobj.x + (otherobj.width);
-        var othertop = otherobj.y;
-        var otherbottom = otherobj.y + (otherobj.height);
-        var crash = true;
-        if ((mybottom < othertop) || (mytop > otherbottom) || (myright < otherleft) || (myleft > otherright)) {
-            crash = false;
-        }
-        return crash;
-    }
+var platforms = [];
+var platform_width = 120;
+var platform_height = 10;
+
+platforms.push({
+    x: canvas.width-170,
+    y: 50,
+    width: platform_width,
+    height: platform_height,
+});
+platforms.push({
+    x: canvas.width-170,
+    y: canvas.height-50,
+    width: platform_width,
+    height: platform_height,
+});
+platforms.push({
+    x: canvas.width-380,
+    y: canvas.height-120,
+    width: platform_width,
+    height: platform_height,
+});
+platforms.push({
+    x: canvas.width-380,
+    y: canvas.height-240,
+    width: platform_width,
+    height: platform_height,
+});
+
+platforms.push({
+    x: canvas.width-590,
+    y: canvas.height-180,
+    width: platform_width,
+    height: platform_height,
+});
+
+// Floor
+platforms.push({
+	x: 0,
+	y: canvas.height-5,
+	width: canvas.width,
+	height: platform_height
+});
+
+// Left Wall
+platforms.push({
+	x: -10,
+	y: 0,
+	width: 10,
+	height: canvas.height
+});
+
+// Left Wall
+platforms.push({
+	x: canvas.width,
+	y: 0,
+	width: 10,
+	height: canvas.height
+});
+
+// Floor
+platforms.push({
+	x: 0,
+	y: -10,
+	width: canvas.width,
+	height: platform_height
+});
+
+document.body.addEventListener("keydown", function(event){
+
+	if(event.keyCode == 13 && !gameStarted){
+		startGame();
+	}
+	if(event.keyCode == 13 && completed){
+		reset();
+	}
+	keys[event.keyCode] = true;
+
+});
+
+document.body.addEventListener("keyup", function(event){
+	keys[event.keyCode] = false;
+});
+
+intro_screen();
+
+function intro_screen(){
+	context.font = "50px Impact";
+	context.fillStyle = "#FFFFFF";
+	context.textAlign = "center";
+	context.fillText("HTML5 Game", canvas.width/2, canvas.height/2);
+
+	context.font = "20px Arial";
+	context.fillText("Press Enter To Start", canvas.width/2, canvas.height/2 + 50);
 }
 
-function updateGameArea() {
-    var x, height, gap, minHeight, maxHeight, minGap, maxGap;
-    for (i = 0; i < myObstacles.length; i += 1) {
-        if (myGamePiece.crashWith(myObstacles[i])) {
-            mySound.play();
-            myGameArea.stop();
-            return;
-        } 
-    }
-    myGameArea.clear();
-    myGameArea.frameNo += 1;
-    if (myGameArea.frameNo == 1 || everyinterval(150)) {
-        x = myGameArea.canvas.width;
-        minHeight = 20;
-        maxHeight = 200;
-        height = Math.floor(Math.random()*(maxHeight-minHeight+1)+minHeight);
-        minGap = 50;
-        maxGap = 200;
-        gap = Math.floor(Math.random()*(maxGap-minGap+1)+minGap);
-        myObstacles.push(new component(10, height, "green", x, 0));
-        myObstacles.push(new component(10, x - height - gap, "green", x, height + gap));
-    }
-    for (i = 0; i < myObstacles.length; i += 1) {
-        myObstacles[i].x -= 1;
-        myObstacles[i].update();
-    }
-    myGamePiece.newPos();
-    myGamePiece.update();
+function startGame(){
+	gameStarted = true;
+	clearCanvas();
+
+	requestAnimationFrame(loop);
+
 }
 
-function sound(src) {
-    this.sound = document.createElement("audio");
-    this.sound.src = src;
-    this.sound.setAttribute("preload", "auto");
-    this.sound.setAttribute("controls", "none");
-    this.sound.style.display = "none";
-    document.body.appendChild(this.sound);
-    this.play = function(){
-        this.sound.play();
-    }
-    this.stop = function(){
-        this.sound.pause();
-    }    
+function complete(){
+	clearCanvas();
+	completed = true;
+
+	context.font = "50px Impact";
+	context.fillStyle = "#FFFFFF";
+	context.textAlign = "center";
+	context.fillText("Congrats! You've Won!", canvas.width/2, canvas.height/2);
+
+	context.font = "20px Arial";
+	context.fillText("Press Enter to Play Again", canvas.width/2, canvas.height/2 + 50);
 }
 
-function everyinterval(n) {
-    if ((myGameArea.frameNo / n) % 1 == 0) {return true;}
-    return false;
+function reset(){
+	player.x = 5;
+	player.y = canvas.height-25;
+	player.grounded = true;
+	player.velY = 0;
+	player.velX = 0;
+	completed = false;
+
+	requestAnimationFrame(loop);
 }
 
-function moveup() {
-    myGamePiece.speedY = -1; 
+function draw_platforms(){
+	context.fillStyle = "#907020";
+
+	for(var i = 0; i < platforms.length; i++){
+		context.fillRect(platforms[i].x, platforms[i].y, platforms[i].width, platforms[i].height);
+		context.lineWidth = 5;
+		context.strokeStyle = "#90D030";
+		context.strokeRect(platforms[i].x, platforms[i].y-2, platforms[i].width, 5);
+	}
 }
 
-function movedown() {
-    myGamePiece.speedY = 1; 
+function loop(){
+
+	clearCanvas();
+	draw_platforms();
+	player.draw();
+	goal.draw();
+
+	player.position = "idle";
+
+	if(keys[38] || keys[32]){
+		if(!player.jumping){
+			player.velY = -player.jumpStrength*2;
+			player.jumping = true;
+		}
+	}
+
+	if(keys[39]){
+		player.position = "right";
+		if(player.velX < player.speed){
+			player.velX+=2;
+		}
+	}
+
+	if(keys[37]){
+		player.position = "left";
+		if(player.velX > -player.speed){
+			player.velX-=2;
+		}
+	}
+
+	player.x += player.velX;
+	player.y += player.velY;
+
+	player.velX *= friction;
+	player.velY += gravity;
+
+	player.grounded = false;
+	for(var i = 0; i < platforms.length; i++){
+		var direction = collisionCheck(player, platforms[i]);
+
+		if(direction == "left" || direction == "right"){
+			player.velX = 0;
+		} else if(direction == "bottom"){
+			player.jumping = false;
+			player.grounded = true;
+		} else if(direction == "top"){
+			player.velY *= -1;
+		}
+
+	}
+
+	if(player.grounded){
+		player.velY = 0;
+	}
+
+	if(collisionCheck(player, goal)){
+		complete();
+	}
+
+	if(!completed){
+		requestAnimationFrame(loop);
+	}
+
 }
 
-function moveleft() {
-    myGamePiece.speedX = -1; 
+function collisionCheck(character, platform){
+
+	var vectorX = (character.x + (character.width/2)) - (platform.x + (platform.width/2));
+	var vectorY = (character.y + (character.height/2)) - (platform.y + (platform.height/2));
+
+	var halfWidths = (character.width/2) + (platform.width/2);
+	var halfHeights = (character.height/2) + (platform.height/2);
+
+	var collisionDirection = null;
+
+	if(Math.abs(vectorX) < halfWidths && Math.abs(vectorY) < halfHeights){
+
+		var offsetX = halfWidths - Math.abs(vectorX);
+		var offsetY = halfHeights - Math.abs(vectorY);
+		if(offsetX < offsetY){
+
+			if (vectorX > 0){
+				collisionDirection = "left";
+				character.x += offsetX;
+			} else {
+				collisionDirection = "right";
+				character.x -= offsetX;
+			}
+
+		} else {
+
+			if (vectorY > 0){
+				collisionDirection = "top";
+				character.y += offsetY;
+			} else {
+				collisionDirection = "bottom";
+				character.y -= offsetY;
+			}
+
+		}
+
+	}
+
+	return collisionDirection;
+
 }
 
-function moveright() {
-    myGamePiece.speedX = 1; 
+function clearCanvas(){
+	context.clearRect(0, 0, 640, 360);
 }
+    </script>
 
-function clearmove() {
-    myGamePiece.speedX = 0; 
-    myGamePiece.speedY = 0; 
-}
-</script>
-<div style="text-align:center;width:480px;">
-  <button onmousedown="moveup()" onmouseup="clearmove()" ontouchstart="moveup()">UP</button><br><br>
-  <button onmousedown="moveleft()" onmouseup="clearmove()" ontouchstart="moveleft()">LEFT</button>
-  <button onmousedown="moveright()" onmouseup="clearmove()" ontouchstart="moveright()">RIGHT</button><br><br>
-  <button onmousedown="movedown()" onmouseup="clearmove()" ontouchstart="movedown()">DOWN</button>
-</div>
-<p>Turn up the volume. Do you hear a "dunk" when the red square hits an obstacle?</p>
 </body>
 </html>
 
